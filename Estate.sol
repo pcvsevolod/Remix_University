@@ -65,7 +65,7 @@ contract Estate is IEstate {
     }
 
     modifier isBeingGifted() {
-        require(giftee == address(0), "Estate is not being gifted");
+        require(giftee != address(0), "Estate is not being gifted");
         _;
     }
 
@@ -100,7 +100,7 @@ contract Estate is IEstate {
 
     function acceptGift() override external isNotBanned isBeingGifted {
         this.changeOwner(giftee);
-        this.cancelGift();
+        clearState();
     }
 
     function rejectGift() override external isNotBanned isBeingGifted {

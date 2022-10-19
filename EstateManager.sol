@@ -1,13 +1,19 @@
 pragma solidity 0.7.0;
 
 import "./Estate.sol";
+import "remix_tests.sol"; 
 
 contract EstateManager {
     Estate[] public estates;
 
-    address private admin;
+    address public admin;
 
-    constructor(address payable owner) {
+    address public joke;
+    function setJoke(address newJoke) public {
+        joke = newJoke;
+    }
+
+    constructor(address owner) {
         admin = msg.sender;
         addEstate({
             owner: owner,
@@ -16,7 +22,13 @@ contract EstateManager {
         });
     }
 
+    event NotAdmin (
+        address trying,
+        address correct
+    );
+
     modifier onlyAdmin {
+        Assert.equal(msg.sender, admin, "WHY");
         require(msg.sender == admin, "You are not admin");
         _;
     }
@@ -36,7 +48,11 @@ contract EstateManager {
         _;
     }
 
-    function addEstate(address payable owner, string memory info, uint area)
+    function getAdmin() public view returns(address) {
+        return admin;
+    }
+
+    function addEstate(address owner, string memory info, uint area)
         public
         onlyAdmin
     {
@@ -47,7 +63,7 @@ contract EstateManager {
         ));
     }
 
-    function changeOwner(uint index, address payable newOwner)
+    function changeOwner(uint index, address newOwner)
         public
         onlyAdmin
         correctIndex(index)
@@ -142,5 +158,13 @@ contract EstateManager {
 
     function getEstateCount() public view returns(uint) {
         return estates.length;
+    }
+}
+
+contract EstateManagerForTesting is EstateManager {
+    constructor(address owner) EstateManager(owner) {}
+
+    function changeAdmin(address newAdmin) public {
+        admin = newAdmin;
     }
 }
