@@ -1,23 +1,136 @@
 pragma solidity 0.7.0;
 
-contract Estates {
+interface IEstate {
+    function isBanned() external returns(bool);
+    function isForSale() external returns(bool);
+    function isBeingGifted() external returns(bool);
 
-    struct Estate {
-        address owner;
-        string info;
-        uint square;
-        bool ban;
-        address giftee;
-        uint price;
+    function changeOwner(address payable newOwner) external;
+    function changeArea(uint newArea) external;
+
+    function ban() external;
+    function unban() external;
+
+    function gift(address giftee_) external;
+    function cancelGift() external;
+    function acceptGift() external;
+    function rejectGift() external;
+
+    function setSalePrice(uint newSalePrice) external;
+    function cancelSale() external;
+}
+
+contract Estate is IEstate {
+    address payable public owner;
+    string public info;
+    uint public area;
+    bool public banned = false;
+    address public giftee = address(0);
+    uint public salePrice = 0;
+
+    constructor(
+        address payable owner_,
+        string memory info_,
+        uint area_
+    ) {
+        require(owner != address(0), "Owner cannot be empty");
+        owner = owner_;
+        info = info_;
+        area = area_;
     }
 
+    modifier isNotBanned() {
+        require(!banned, "Estate is banned");
+        _;
+    }
+
+    modifier isNotForSale() {
+        require(salePrice == 0, "Estate is for sale");
+        _;
+    }
+
+    modifier isNotBeingGifted() {
+        require(giftee == address(0), "Estate is being gifted");
+        _;
+    }
+
+    function isBanned() override external view returns(bool) {
+        return banned;
+    }
+
+    function isForSale() override external view returns(bool) {
+        return salePrice > 0;
+    }
+
+    function isBeingGifted() override external view returns(bool) {
+        return giftee != address(0);
+    }
+
+    function changeOwner(address payable newOwner) override external isNotBanned {
+        require(newOwner != address(0), "New owner cannot be empty");
+        owner = newOwner;
+        clearState();
+    }
+
+    function changeArea(uint newArea) override external {
+        require(newArea > 0, "New area cannot be zero");
+        area = newArea;
+    }
+
+    function ban() override external {
+        banned = true;
+        clearState();
+    }
+
+    function unban() override external {
+        banned = false;
+    }
+
+    function gift(address newGiftee) override external isNotBanned isNotForSale {
+        require(newGiftee != address(0), "New giftee cannot be empty");
+        giftee = newGiftee;
+    }
+
+    function cancelGift() override external {
+        giftee = address(0);
+    }
+
+    function acceptGift() override external isNotBanned {
+        owner = payable(giftee);
+        this.cancelGift();
+    }
+
+    function rejectGift() override external isNotBanned {
+        this.cancelGift();
+    }
+
+    function setSalePrice(uint newSalePrice) override external isNotBanned isNotBeingGifted {
+        require(newSalePrice > 0, "New sale price cannot be zero");
+        salePrice = newSalePrice;
+    }
+
+    function cancelSale() override external {
+        salePrice = 0;
+    }
+
+    function clearState() private {
+        this.cancelSale();
+        this.cancelGift();
+    }
+}
+
+contract Estates {
     Estate[] public estates;
 
     address private admin;
 
-    constructor(address _owner) public {
-        estates.push(Estate(_owner, "Taganrog, Checkova, 2", 1000, false, address(0), 0));
+    constructor(address payable owner) {
         admin = msg.sender;
+        addEstate({
+            owner: owner,
+            info: "Taganrog, Checkova, 2",
+            area: 1_000
+        });
     }
 
     modifier onlyAdmin {
@@ -25,77 +138,126 @@ contract Estates {
         _;
     }
 
-    function add_estate(address _owner, string memory _info, uint _square) public onlyAdmin {
-        require(_owner != address(0), "wrong address");
-        estates.push(Estate(_owner, _info, _square, false, address(0), 0));
+    modifier correctIndex(uint index) {
+        require(index < estates.length, "Index out of bounds");
+        _;
     }
 
-    function change_owner(uint _id, address _owner) public onlyAdmin {
-        require(_id < estates.length, "Doest exist");
-        require(_owner != address(0), "wrong address");
-        estates[_id].owner = _owner;
-        estates[_id].giftee = address(0);
-        estates[_id].price = 0;
+    modifier myEstate(uint index) {
+        require(estates[index].owner() == msg.sender, "You don't own this estate");
+        _;
     }
 
-    function change_square(uint _id, uint _square) public onlyAdmin {
-        require(_id < estates.length, "Doest exist");
-        require(_square > 0, "wrong value");
-        estates[_id].square = _square;
+    modifier giftForMe(uint index) {
+        require(estates[index].giftee() == msg.sender, "Gift not for you");
+        _;
     }
 
-    function change_ban(uint _id) public onlyAdmin {
-        require(_id < estates.length, "Doest exist");
-        estates[_id].ban = !estates[_id].ban;
+    function addEstate(address payable owner, string memory info, uint area)
+        public
+        onlyAdmin
+    {
+        estates.push(new Estate(
+            owner,
+            info,
+            area
+        ));
     }
 
-    function present(uint _id, address _giftee) public {
-        require(_id < estates.length, "Doest exist");
-        require(msg.sender ==  estates[_id].owner, "not your estate");
-        require(!estates[_id].ban, "estate is banned");
-        require(estates[_id].price == 0, "already in sale");
-        estates[_id].giftee = _giftee;
+    function changeOwner(uint index, address payable newOwner)
+        public
+        onlyAdmin
+        correctIndex(index)
+    {
+        estates[index].changeOwner(newOwner);
     }
 
-    function accept_present(uint _id) public {
-        require(_id < estates.length, "Doest exist");
-        require(msg.sender ==  estates[_id].giftee, "not for you");
-        require(!estates[_id].ban, "estate is banned");    
-        estates[_id].owner = msg.sender;
-        estates[_id].giftee = address(0);
+    function changeArea(uint index, uint area) 
+        public
+        onlyAdmin
+        correctIndex(index)
+    {
+        require(area > 0, "Area cannot be zero");
+        estates[index].changeArea(area);
     }
 
-    function reject_present(uint _id) public {
-        require(_id < estates.length, "Doest exist");
-        require(msg.sender ==  estates[_id].giftee, "not for you");
-        estates[_id].giftee = address(0);
+    function banEstate(uint index)
+        public
+        onlyAdmin
+        correctIndex(index)
+    {
+        estates[index].ban();
     }
 
-    function sale(uint _id, uint _price) public {
-        require(_id < estates.length, "Doest exist");
-        require(msg.sender ==  estates[_id].owner, "not your estate");
-        require(!estates[_id].ban, "estate is banned");
-        require(estates[_id].giftee == address(0), "already in present");
-        estates[_id].price = _price;
+    function unbanEstate(uint index)
+        public
+        onlyAdmin
+        correctIndex(index)
+    {
+        estates[index].unban();
     }
 
-    function buy(uint _id) public payable {
-        require(_id < estates.length, "Doest exist");
-        require(!estates[_id].ban, "estate is banned");
-        require(estates[_id].price != 0, "Not saled");
-        require(estates[_id].owner != msg.sender, "it's your estate");
-        require(msg.value == estates[_id].price, "wrong amount of money");
-        address last_owner = estates[_id].owner;
-        estates[_id].owner = msg.sender;
-        estates[_id].price = 0;
-        payable(last_owner).transfer(msg.value);
+    function giftEstate(uint index, address giftee)
+        public
+        correctIndex(index)
+        myEstate(index)
+    {
+        estates[index].gift(giftee);
     }
 
-    function get_estate_amount() public view returns(uint) {
+    function stopGifting(uint index)
+        public
+        correctIndex(index)
+        myEstate(index)
+    {
+        estates[index].cancelGift();
+    }
+
+    function acceptGift(uint index)
+        public
+        correctIndex(index)
+        giftForMe(index)
+    {
+        estates[index].acceptGift();
+    }
+
+    function rejectGift(uint index)
+        public
+        correctIndex(index)
+        giftForMe(index)
+    {
+        estates[index].rejectGift();
+    }
+
+    function sale(uint index, uint price)
+        public
+        correctIndex(index)
+        myEstate(index)
+    {
+        estates[index].setSalePrice(price);
+    }
+
+    function cancelSale(uint index)
+        public
+        correctIndex(index)
+        myEstate(index)
+    {
+        estates[index].cancelSale();
+    }
+
+    function buy(uint index)
+        public
+        payable
+        correctIndex(index)
+    {
+        require(estates[index].owner() != msg.sender, "it is your estate");
+        require(msg.value == estates[index].salePrice(), "Wrong price");
+        address lastOwner = estates[index].owner();
+        estates[index].changeOwner(msg.sender);
+        payable(lastOwner).transfer(msg.value);
+    }
+
+    function getEstateCount() public view returns(uint) {
         return estates.length;
     }
-
-    
-
-
 }
